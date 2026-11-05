@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f5f8fc">
+  <title>LabControl | Monitoramento do laboratório</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/mqtt@5.16.0/dist/mqtt.min.js" defer></script>
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <main class="dashboard">
+    <header class="header">
+      <div class="brand"><span class="brand-icon" aria-hidden="true">L<span>°</span></span><div><h1>LabControl</h1><p>Monitoramento de temperatura do laboratório</p></div></div>
+      <span class="demo-badge" role="status"><span aria-hidden="true"></span><span id="mqtt-status">MQTT · Conectando…</span></span>
+    </header>
+
+    <section class="overview" aria-label="Monitoramento">
+      <article class="card temperature-card">
+        <div class="eyebrow">TEMPERATURA ATUAL</div>
+        <p class="temperature"><span id="temperature">—</span><span class="unit">°C</span></p>
+        <p class="reference"><span class="reference-dot" aria-hidden="true"></span> Referência <strong>20 °C</strong></p>
+        <div class="card-bottom"><span>Última leitura recebida</span><span id="updated-at">—</span></div>
+      </article>
+
+      <article class="card chart-card">
+        <div class="section-heading"><div><h2>Evolução da temperatura</h2><p>Últimas 60 leituras recebidas via MQTT</p></div><span class="legend"><i aria-hidden="true"></i> °C</span></div>
+        <div class="chart-container"><canvas id="temperature-chart" role="img" aria-label="Gráfico das últimas temperaturas recebidas, com referência em 20 graus Celsius"></canvas></div>
+        <div class="chart-footer"><span>Mais antigas</span><span class="target-key">– – Referência: 20 °C</span><span>Agora</span></div>
+      </article>
+    </section>
+
+    <section class="card access-card" aria-labelledby="access-title">
+      <div class="section-heading"><div><h2 id="access-title">Controle de acesso</h2><p>Envie comandos ao dispositivo via MQTT.</p></div><span class="small-label">MQTT</span></div>
+      <div class="access-content">
+        <div class="event" role="status" aria-live="polite"><span class="event-icon" aria-hidden="true">↗</span><div><span class="event-label">Último evento registrado</span><p id="access-event">Aguardando evento de acesso</p><span id="event-time">Os eventos aparecerão aqui.</span></div></div>
+        <div class="actions"><button disabled id="unlock-button" class="button button-primary" type="button">Liberar acesso <span aria-hidden="true">↗</span></button><button disabled id="lock-button" class="button button-secondary" type="button">Travar acesso</button></div>
+      </div>
+    </section>
+    <p id="command-status" class="command-status" role="status" aria-live="polite">Nenhum comando enviado.</p>
+    <footer class="footer"><span>LabControl IoT</span><form id="device-form" class="device-form"><label for="device-mac">MAC do dispositivo</label><input id="device-mac" value="A1B2C3D4E5F6" pattern="[A-Fa-f0-9]{12}" minlength="12" maxlength="12" required spellcheck="false" autocomplete="off" aria-label="MAC do dispositivo: 12 caracteres hexadecimais"><button type="submit">Aplicar</button></form></footer>
+  </main>
+</body>
+</html>
