@@ -9,12 +9,12 @@ constexpr char WIFI_PASSWORD[] = "";
 constexpr char MQTT_HOST[] = "broker.hivemq.com";
 constexpr uint16_t MQTT_PORT = 1883;
 
+constexpr uint8_t PIN_BOTAO_FECHAR = 14;
 constexpr uint8_t PIN_LED_FECHADURA = 25;
 constexpr uint8_t PIN_LED_REFRIGERACAO = 26;
 
 constexpr unsigned long INTERVALO_TEMPERATURA_MS = 1000;
-constexpr unsigned long TEMPO_ABERTURA_MS = 20000;
-constexpr unsigned long TEMPO_FECHADURA_MS = 5000;
+constexpr unsigned long DEBOUNCE_MS = 50;
 constexpr unsigned long RECONEXAO_WIFI_MS = 10000;
 constexpr unsigned long RECONEXAO_MQTT_MS = 5000;
 
@@ -33,14 +33,15 @@ char topicoCooler[64];
 float temperaturaC = TEMPERATURA_INICIAL_C;
 
 bool refrigeracaoLigada = false;
-bool fechaduraLiberada = false;
 bool portaAberta = false;
 
+bool ultimaLeituraBotao = HIGH;
+bool estadoBotao = HIGH;
+
+unsigned long ultimaMudancaBotao = 0;
 unsigned long ultimaLeitura = 0;
 unsigned long ultimoWiFi = 0;
 unsigned long ultimoMQTT = 0;
-unsigned long inicioLiberacao = 0;
-unsigned long inicioAbertura = 0;
 
 void atualizarTemperatura() {
   float aleatorio = random(0, 10001) / 10000.0f;
@@ -108,10 +109,7 @@ void mensagemMQTT(char *topico, byte *payload, unsigned int tamanho) {
   comando.toLowerCase();
 
   if (comando == "liberado" && !portaAberta) {
-    fechaduraLiberada = true;
     portaAberta = true;
-    inicioLiberacao = millis();
-    inicioAbertura = millis();
 
     digitalWrite(PIN_LED_FECHADURA, HIGH);
 
@@ -119,17 +117,6 @@ void mensagemMQTT(char *topico, byte *payload, unsigned int tamanho) {
     Serial.println("[PORTA] ABERTA");
 
     mqtt.publish(topicoAcesso, "aberta", true);
-
-  } else if (comando == "travado" && portaAberta) {
-    fechaduraLiberada = false;
-    portaAberta = false;
-
-    digitalWrite(PIN_LED_FECHADURA, LOW);
-
-    Serial.println("[FECHADURA] TRAVADA");
-    Serial.println("[PORTA] FECHADA");
-
-    mqtt.publish(topicoAcesso, "fechada", true);
   }
 }
 
@@ -182,6 +169,7 @@ void gerenciarConexoes() {
 void setup() {
   Serial.begin(115200);
 
+  pinMode(PIN_BOTAO_FECHAR, INPUT);
   pinMode(PIN_LED_FECHADURA, OUTPUT);
   pinMode(PIN_LED_REFRIGERACAO, OUTPUT);
 
@@ -223,23 +211,29 @@ void loop() {
   gerenciarConexoes();
 
   unsigned long agora = millis();
+  bool leitura = digitalRead(PIN_BOTAO_FECHAR);
 
-  if (fechaduraLiberada && agora - inicioLiberacao >= TEMPO_FECHADURA_MS) {
-    fechaduraLiberada = false;
-    Serial.println("[FECHADURA] TRAVADA");
+  if (leitura != ultimaLeituraBotao)
+    ultimaMudancaBotao = agora;
+
+  if (agora - ultimaMudancaBotao >= DEBOUNCE_MS &&
+      leitura != estadoBotao) {
+
+    estadoBotao = leitura;
+
+    if (estadoBotao == LOW && portaAberta) {
+      portaAberta = false;
+
+      digitalWrite(PIN_LED_FECHADURA, LOW);
+
+      Serial.println("[PORTA] FECHADA LOCALMENTE");
+
+      if (mqtt.connected())
+        mqtt.publish(topicoAcesso, "fechada", true);
+    }
   }
 
-  if (portaAberta && agora - inicioAbertura >= TEMPO_ABERTURA_MS) {
-    portaAberta = false;
-    fechaduraLiberada = false;
-
-    digitalWrite(PIN_LED_FECHADURA, LOW);
-
-    Serial.println("[PORTA] FECHADA");
-
-    if (mqtt.connected())
-      mqtt.publish(topicoAcesso, "fechada", true);
-  }
+  ultimaLeituraBotao = leitura;
 
   if (agora - ultimaLeitura >= INTERVALO_TEMPERATURA_MS) {
     ultimaLeitura = agora;
