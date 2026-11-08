@@ -10,9 +10,12 @@ const formatter = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, max
 let temperature = null;
 let client = null;
 let ready = false;
-let deviceMac = "A1B2C3D4E5F6";
+let deviceMac = "AABBCCDDEEFF";
+let coolerState = null;
+let doorState = null;
+const coolerHistory = [];
+const accessHistory = [];
 const unlockButton = document.getElementById("unlock-button");
-const lockButton = document.getElementById("lock-button");
 const connectionStatus = document.getElementById("mqtt-status");
 const commandStatus = document.getElementById("command-status");
 
@@ -24,7 +27,33 @@ function setConnection(text, available = false) {
   ready = available;
   connectionStatus.textContent = `MQTT · ${text}`;
   unlockButton.disabled = !available;
-  lockButton.disabled = !available;
+}
+
+function renderHistory(id, events) {
+  const list = document.getElementById(id);
+  list.replaceChildren();
+  if (!events.length) {
+    const empty = document.createElement("li");
+    empty.className = "empty";
+    empty.textContent = "Nenhum evento recebido nesta sessão.";
+    list.append(empty);
+    return;
+  }
+  events.forEach(event => {
+    const item = document.createElement("li");
+    const time = document.createElement("time");
+    time.textContent = event.time;
+    const description = document.createElement("span");
+    description.textContent = event.text;
+    item.append(time, description);
+    list.append(item);
+  });
+}
+
+function addEvent(id, history, text) {
+  history.unshift({ time: timeNow(), text });
+  history.splice(10);
+  renderHistory(id, history);
 }
 
 function connectDevice(mac) {
@@ -37,10 +66,19 @@ function connectDevice(mac) {
   deviceMac = mac;
   temperature = null;
   readings.length = 0;
+  coolerState = null;
+  doorState = null;
+  coolerHistory.length = 0;
+  accessHistory.length = 0;
+  renderHistory("cooler-history", coolerHistory);
+  renderHistory("access-history", accessHistory);
+  const coolerIndicator = document.getElementById("cooler-state");
+  coolerIndicator.textContent = "COOLER · AGUARDANDO";
+  coolerIndicator.classList.remove("is-on");
   temperatureDisplay.textContent = "—";
   updatedAt.textContent = "—";
-  document.getElementById("access-event").textContent = "Aguardando evento de acesso";
-  document.getElementById("event-time").textContent = "Os eventos aparecerão aqui.";
+  document.getElementById("access-event").textContent = "Aguardando estado da porta";
+  document.getElementById("event-time").textContent = "Nenhum estado recebido.";
   commandStatus.textContent = "Nenhum comando enviado.";
   drawChart();
   if (!window.mqtt) {
@@ -49,9 +87,10 @@ function connectDevice(mac) {
   }
   const temperatureTopic = `tp546/${mac}/temperatura`;
   const accessTopic = `tp546/${mac}/acesso`;
+  const coolerTopic = `tp546/${mac}/cooler`;
   const current = window.mqtt.connect("wss://broker.hivemq.com:8884/mqtt", {
     clientId: `labcontrol-web-${crypto.randomUUID()}`,
-    protocolVersion: 5,
+    protocolVersion: 4,
     clean: true,
     reconnectPeriod: 5000,
     reconnectOnConnackError: true,
@@ -64,18 +103,18 @@ function connectDevice(mac) {
     setConnection("Inscrevendo…");
     current.subscribe({
       [temperatureTopic]: { qos: 0 },
-      // Não receber nossos próprios comandos como eventos de acesso.
-      [accessTopic]: { qos: 0, nl: true },
+      [accessTopic]: { qos: 0 },
+      [coolerTopic]: { qos: 0 },
     }, (error, granted) => {
       if (client !== current || !current.connected) return;
-      if (error || !granted || granted.length !== 2 || granted.some(item => item.qos >= 128)) {
+      if (error || !granted || granted.length !== 3 || granted.some(item => item.qos >= 128)) {
         setConnection("Falha na inscrição");
         return;
       }
       setConnection("Conectado", true);
     });
   });
-  current.on("message", (topic, payload) => {
+  current.on("message", (topic, payload, packet) => {
     if (client !== current) return;
     const text = payload.toString().trim();
     if (topic === temperatureTopic) {
@@ -88,15 +127,33 @@ function connectDevice(mac) {
       temperatureDisplay.textContent = formatter.format(value);
       updatedAt.textContent = timeNow();
       drawChart();
-    } else if (topic === accessTopic && ["liberado", "negado"].includes(text)) {
-      document.getElementById("access-event").textContent = text === "liberado"
-        ? "Evento recebido: acesso liberado" : "Evento recebido: acesso negado";
-      document.getElementById("event-time").textContent = `${timeNow()} · Origem não informada pelo protocolo`;
+    } else if (topic === coolerTopic && ["ligado", "desligado"].includes(text)) {
+      const previous = coolerState;
+      coolerState = text;
+      const indicator = document.getElementById("cooler-state");
+      indicator.textContent = `COOLER ${text.toUpperCase()}`;
+      indicator.classList.toggle("is-on", text === "ligado");
+      if (!packet?.retain && previous !== text) {
+        const latestTemperature = temperature === null ? "temperatura indisponível" : `${formatter.format(temperature)} °C`;
+        addEvent("cooler-history", coolerHistory, `Cooler ${text} · ${latestTemperature}`);
+      }
+    } else if (topic === accessTopic && ["aberta", "fechada"].includes(text)) {
+      const previous = doorState;
+      doorState = text;
+      document.getElementById("access-event").textContent = `PORTA ${text.toUpperCase()}`;
+      document.getElementById("event-time").textContent = `${timeNow()} · ${packet?.retain ? "Último estado conhecido (retido)" : "Estado recebido"}`;
+      if (!packet?.retain && previous !== text) {
+        addEvent("access-history", accessHistory, `Porta ${text}`);
+      }
     }
   });
   const unavailable = text => {
     if (client !== current) return;
     setConnection(text);
+    document.getElementById("access-event").textContent = "Estado da porta indisponível";
+    document.getElementById("event-time").textContent = doorState === null
+      ? "Aguardando conexão e estado MQTT."
+      : `Último estado conhecido: porta ${doorState}. Aguardando novo estado MQTT.`;
     commandStatus.textContent = "Conexão indisponível. Comandos desabilitados.";
   };
   current.on("reconnect", () => unavailable("Reconectando…"));
@@ -118,7 +175,6 @@ function sendCommand(command) {
 }
 
 unlockButton.addEventListener("click", () => sendCommand("liberado"));
-lockButton.addEventListener("click", () => sendCommand("travado"));
 document.getElementById("device-form").addEventListener("submit", event => {
   event.preventDefault();
   const input = document.getElementById("device-mac");
@@ -146,8 +202,8 @@ function drawChart() {
     return;
   }
   const left = 34, right = width - 8, top = 10, bottom = height - 15;
-  const minimum = Math.min(19.5, Math.floor((Math.min(...readings) - 0.15) * 2) / 2);
-  const maximum = Math.max(21, Math.ceil((Math.max(...readings) + 0.15) * 2) / 2);
+  const minimum = Math.min(24, Math.floor((Math.min(...readings) - 0.15) * 2) / 2);
+  const maximum = Math.max(36, Math.ceil((Math.max(...readings) + 0.15) * 2) / 2);
   const y = value => bottom - (value - minimum) / (maximum - minimum) * (bottom - top);
   const x = index => left + index / 59 * (right - left);
   context.font = '10px "Segoe UI", Arial, sans-serif';
@@ -162,7 +218,11 @@ function drawChart() {
   }
   context.setLineDash([4, 5]);
   context.strokeStyle = "#b3c5dd";
-  context.beginPath(); context.moveTo(left, y(20)); context.lineTo(right, y(20)); context.stroke();
+  [25, 35].forEach(value => {
+    context.beginPath(); context.moveTo(left, y(value)); context.lineTo(right, y(value)); context.stroke();
+    context.fillStyle = "#7d91ab";
+    context.fillText(`${value} °C`, right - 4, y(value) - 8);
+  });
   context.setLineDash([]);
   const gradient = context.createLinearGradient(0, top, 0, bottom);
   gradient.addColorStop(0, "rgba(75,136,220,0.16)");
@@ -175,6 +235,6 @@ function drawChart() {
   readings.forEach((value, index) => index === 0 ? context.moveTo(x(index), y(value)) : context.lineTo(x(index), y(value)));
   context.strokeStyle = "#4b88dc"; context.lineWidth = 2.5; context.lineJoin = "round"; context.stroke(); context.lineWidth = 1;
   context.beginPath(); context.arc(x(readings.length - 1), y(readings.at(-1)), 3.5, 0, Math.PI * 2); context.fillStyle = "#4b88dc"; context.fill();
-  canvas.setAttribute("aria-label", `Gráfico com ${readings.length} leituras recebidas. Temperatura atual: ${formatter.format(temperature)} graus Celsius. Referência: 20 graus Celsius.`);
+  canvas.setAttribute("aria-label", `Gráfico com ${readings.length} leituras recebidas. Temperatura atual: ${formatter.format(temperature)} graus Celsius. Referências: 25 e 35 graus Celsius.`);
 }
 
