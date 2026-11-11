@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f5f8fc">
+  <title>RackSafe IoT | Racks de telecomunicações</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/mqtt@5.16.0/dist/mqtt.min.js" defer></script>
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <main class="dashboard">
+    <header class="header">
+      <div class="brand"><span class="brand-icon" aria-hidden="true">R<span>°</span></span><div><h1>RackSafe IoT</h1><p>Monitoramento térmico e controle de acesso • Racks de telecomunicações</p></div></div>
+      <span class="demo-badge" role="status"><span aria-hidden="true"></span><span id="mqtt-status">MQTT · Conectando…</span></span>
+    </header>
+
+    <section class="overview" aria-label="Monitoramento">
+      <article class="card temperature-card">
+        <div class="eyebrow">TEMPERATURA ATUAL</div>
+        <p class="temperature"><span id="temperature">—</span><span class="unit">°C</span></p>
+        <p class="reference"><span class="reference-dot" aria-hidden="true"></span> Cooler automático <strong>25–35 °C</strong></p>
+        <div class="card-bottom"><span>Última leitura recebida</span><span id="updated-at">—</span></div>
+      </article>
+
+      <article class="card chart-card">
+        <div class="section-heading"><div><h2>Evolução da temperatura</h2><p>Últimas 60 leituras recebidas via MQTT</p></div><span class="legend"><i aria-hidden="true"></i> °C</span></div>
+        <div class="chart-container"><canvas id="temperature-chart" role="img" aria-label="Aguardando temperaturas recebidas via MQTT. Referências em 25 e 35 graus Celsius."></canvas></div>
+        <div class="chart-footer"><span>Mais antigas</span><span class="target-key">– – Referências: 25 / 35 °C</span><span>Agora</span></div>
+      </article>
+    </section>
+
+    <section class="card cooler-card" aria-labelledby="cooler-title">
+      <div class="section-heading"><div><h2 id="cooler-title">Refrigeração</h2><p>Estado informado pelo rack</p></div><span id="cooler-state" class="state" role="status">COOLER · AGUARDANDO</span></div>
+      <h3>Últimos acionamentos e desligamentos</h3>
+      <ol id="cooler-history" class="history" aria-label="Histórico do cooler"><li class="empty">Nenhum evento recebido nesta sessão.</li></ol>
+    </section>
+    <section class="card access-card" aria-labelledby="access-title">
+      <div class="section-heading"><div><h2 id="access-title">Controle de acesso</h2><p>Fechamento realizado localmente</p></div><span class="small-label">MQTT</span></div>
+      <div class="access-content">
+        <div class="event" role="status" aria-live="polite"><span class="event-icon" aria-hidden="true">↗</span><div><span class="event-label">Estado da porta recebido</span><p id="access-event">Aguardando estado da porta</p><span id="event-time">Nenhum estado recebido.</span></div></div>
+        <div class="actions"><button disabled id="unlock-button" class="button button-primary" type="button">Liberar acesso <span aria-hidden="true">↗</span></button></div>
+      </div>
+      <h3>Últimas aberturas e fechamentos</h3>
+      <ol id="access-history" class="history" aria-label="Histórico da porta"><li class="empty">Nenhum evento recebido nesta sessão.</li></ol>
+    </section>
+    <p id="command-status" class="command-status" role="status" aria-live="polite">Nenhum comando enviado.</p>
+    <footer class="footer"><span>RackSafe IoT</span><form id="device-form" class="device-form"><label for="device-mac">MAC do rack</label><input id="device-mac" value="AABBCCDDEEFF" pattern="[A-Fa-f0-9]{12}" minlength="12" maxlength="12" required spellcheck="false" autocomplete="off" aria-label="MAC do rack: 12 caracteres hexadecimais"><button type="submit">Aplicar</button></form></footer>
+  </main>
+</body>
+</html>
